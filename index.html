@@ -9,9 +9,7 @@
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 
   <style>
-    * {
-      box-sizing: border-box;
-    }
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -47,10 +45,25 @@
       border-radius: 16px;
     }
 
+    label {
+      display: block;
+      font-weight: bold;
+      margin: 15px 0 8px;
+    }
+
+    input {
+      width: 100%;
+      padding: 14px;
+      border: 1px solid #d8cbbd;
+      border-radius: 9px;
+      font-size: 16px;
+      margin-bottom: 10px;
+    }
+
     button {
       width: 100%;
       padding: 16px;
-      margin: 7px 0;
+      margin: 6px 0;
       background: #796451;
       color: white;
       border: none;
@@ -64,18 +77,66 @@
       opacity: 0.5;
     }
 
+    .secundario {
+      background: #eee5da;
+      color: #211d19;
+    }
+
+    .confirmar {
+      background: #36734c;
+    }
+
     #reader {
       width: 100%;
-      margin-top: 15px;
+      margin-top: 12px;
+    }
+
+    #conexion {
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 14px;
+      text-align: center;
     }
 
     #resultado {
-      background: #f5eee5;
-      padding: 17px;
-      border-radius: 10px;
-      margin-top: 15px;
+      padding: 20px;
+      border-radius: 12px;
+      margin-top: 16px;
       text-align: center;
       overflow-wrap: anywhere;
+    }
+
+    #resultado h2 {
+      font-size: 21px;
+      margin: 0 0 12px;
+    }
+
+    #resultado p {
+      margin: 8px 0;
+    }
+
+    .verde {
+      background: #e5f4e8;
+      color: #245c35;
+    }
+
+    .rojo {
+      background: #fce8e8;
+      color: #a32626;
+    }
+
+    .amarillo {
+      background: #fff1d5;
+      color: #805600;
+    }
+
+    .neutro {
+      background: #f5eee5;
+      color: #796451;
+    }
+
+    .oculto {
+      display: none !important;
     }
 
     footer {
@@ -88,6 +149,7 @@
     @media (max-width: 520px) {
       main {
         margin: 15px;
+        padding: 18px;
       }
     }
   </style>
@@ -103,19 +165,73 @@
 
 <main>
 
+  <div id="conexion" class="amarillo">
+    Conectando con el sistema...
+  </div>
+
+  <label for="clave">Clave de acceso</label>
+
+  <input
+    id="clave"
+    type="password"
+    placeholder="Ingresa la clave de voluntarios"
+    autocomplete="off"
+    autocapitalize="none"
+    spellcheck="false"
+  >
+
   <button id="iniciar" onclick="iniciarCamara()">
     📷 Escanear código QR
   </button>
 
   <div id="reader"></div>
 
-  <button id="detener" onclick="detenerCamara()" hidden>
+  <button
+    id="detener"
+    class="secundario oculto"
+    onclick="detenerCamara()"
+  >
     Cerrar cámara
   </button>
 
-  <div id="resultado">
-    Prueba de funcionamiento de la cámara.
+  <label for="codigo">Código de entrada</label>
+
+  <input
+    id="codigo"
+    type="text"
+    placeholder="Ingresar código manualmente"
+    autocomplete="off"
+    autocapitalize="characters"
+    spellcheck="false"
+  >
+
+  <button id="verificar" onclick="verificarEntrada()">
+    Verificar entrada
+  </button>
+
+  <div id="resultado" class="oculto">
+    <h2 id="tituloResultado"></h2>
+    <p id="nombreResultado"></p>
+    <p id="numeroResultado"></p>
+    <p id="detalleResultado"></p>
+    <p id="fechaResultado"></p>
   </div>
+
+  <button
+    id="confirmar"
+    class="confirmar oculto"
+    onclick="confirmarIngreso()"
+  >
+    ✓ Confirmar ingreso
+  </button>
+
+  <button
+    id="nueva"
+    class="secundario oculto"
+    onclick="nuevaEntrada()"
+  >
+    Escanear nueva entrada
+  </button>
 
 </main>
 
@@ -125,22 +241,217 @@
   Equipo Resonando – Dani Donoso ✝️
 </footer>
 
-<script>
-  let escaner = null;
-  let activa = false;
-  let leyendo = false;
+<iframe
+  id="puente"
+  title="Conexión con el validador"
+  class="oculto"
+></iframe>
 
-  function mostrar(mensaje) {
-    document.getElementById("resultado").textContent = mensaje;
+<script>
+
+  const URL_PUENTE =
+    "https://script.google.com/macros/s/AKfycbzaCFjpGqIyP-zJUn0emy7iIUCaWKAqti9A37no1zlbbMEj1xJJCczXWGRXErascjMviQ/exec?modo=puente";
+
+  let conectado = false;
+  let ventanaPuente = null;
+  let origenPuente = null;
+
+  let escaner = null;
+  let camaraActiva = false;
+  let ocupado = false;
+  let procesandoQR = false;
+
+  let codigoValidado = "";
+  let claveValidada = "";
+
+  let solicitudPendiente = null;
+  let temporizador = null;
+
+  function elemento(id) {
+    return document.getElementById(id);
+  }
+
+  function origenGooglePermitido(origen) {
+    try {
+      const url = new URL(origen);
+
+      return url.protocol === "https:" &&
+        (
+          url.hostname === "script.google.com" ||
+          url.hostname === "script.googleusercontent.com" ||
+          url.hostname.endsWith("-script.googleusercontent.com") ||
+          url.hostname.endsWith(".script.googleusercontent.com")
+        );
+
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function perteneceAlPuente(ventana) {
+    try {
+      let actual = ventana;
+      const marco = elemento("puente").contentWindow;
+
+      for (let i = 0; i < 10; i++) {
+        if (actual === marco) return true;
+        if (!actual || actual === window) return false;
+
+        const padre = actual.parent;
+
+        if (padre === actual) return false;
+        actual = padre;
+      }
+
+    } catch (error) {
+      return false;
+    }
+
+    return false;
+  }
+
+  window.addEventListener("message", function(evento) {
+
+    if (!origenGooglePermitido(evento.origin)) return;
+    if (!perteneceAlPuente(evento.source)) return;
+
+    const datos = evento.data;
+
+    if (!datos || typeof datos !== "object") return;
+
+    if (datos.tipo === "RESONANDO_LISTO") {
+
+      ventanaPuente = evento.source;
+      origenPuente = evento.origin;
+      conectado = true;
+
+      elemento("conexion").className = "verde";
+      elemento("conexion").textContent =
+        "● Sistema conectado";
+
+      return;
+    }
+
+    if (
+      evento.source !== ventanaPuente ||
+      evento.origin !== origenPuente
+    ) return;
+
+    if (datos.tipo === "RESONANDO_RESPUESTA") {
+
+      if (
+        !solicitudPendiente ||
+        datos.solicitud !== solicitudPendiente.id
+      ) return;
+
+      clearTimeout(temporizador);
+
+      const solicitud = solicitudPendiente;
+      solicitudPendiente = null;
+
+      cambiarOcupado(false);
+
+      procesarRespuesta(
+        datos.respuesta,
+        solicitud.codigo,
+        solicitud.clave
+      );
+    }
+
+  });
+
+  elemento("puente").src = URL_PUENTE;
+
+  setTimeout(function() {
+    if (!conectado) {
+      elemento("conexion").className = "rojo";
+      elemento("conexion").textContent =
+        "Sin conexión. Recarga la página e intenta nuevamente.";
+    }
+  }, 20000);
+
+  function obtenerClave() {
+    return elemento("clave").value.trim();
+  }
+
+  function comprobarAcceso() {
+
+    if (!conectado) {
+      mostrarResultado(
+        "Sin conexión",
+        "Espera a que el sistema se conecte o recarga la página.",
+        "amarillo"
+      );
+      return false;
+    }
+
+    if (!obtenerClave()) {
+      mostrarResultado(
+        "Ingresa la clave",
+        "Debes ingresar la clave de voluntarios.",
+        "amarillo"
+      );
+      return false;
+    }
+
+    return true;
+  }
+
+  function mostrarResultado(
+    titulo,
+    detalle,
+    color,
+    nombre = "",
+    numero = "",
+    fecha = ""
+  ) {
+
+    elemento("resultado").className = color;
+
+    elemento("tituloResultado").textContent = titulo;
+    elemento("detalleResultado").textContent = detalle;
+    elemento("nombreResultado").textContent = nombre;
+
+    elemento("numeroResultado").textContent =
+      numero ? "Entrada N.º " + numero : "";
+
+    elemento("fechaResultado").textContent =
+      fecha ? "Ingreso: " + fecha : "";
+  }
+
+  function ocultarConfirmacion() {
+
+    codigoValidado = "";
+    claveValidada = "";
+
+    elemento("confirmar").classList.add("oculto");
+  }
+
+  function cambiarOcupado(valor) {
+
+    ocupado = valor;
+
+    elemento("verificar").disabled = valor;
+    elemento("confirmar").disabled = valor;
+    elemento("nueva").disabled = valor;
+    elemento("clave").disabled = valor;
+    elemento("codigo").disabled = valor;
+
+    elemento("iniciar").disabled =
+      valor || camaraActiva;
   }
 
   async function iniciarCamara() {
-    if (activa || leyendo) return;
 
-    leyendo = true;
-    document.getElementById("iniciar").disabled = true;
+    if (ocupado || camaraActiva) return;
+    if (!comprobarAcceso()) return;
+
+    ocultarConfirmacion();
+
+    cambiarOcupado(true);
 
     try {
+
       escaner = new Html5Qrcode("reader");
 
       await escaner.start(
@@ -149,51 +460,303 @@
           fps: 10,
           qrbox: { width: 220, height: 220 }
         },
-        async function(codigo) {
-          if (leyendo || !activa) return;
 
-          leyendo = true;
+        async function(texto) {
+
+          if (
+            !camaraActiva ||
+            ocupado ||
+            procesandoQR
+          ) return;
+
+          procesandoQR = true;
+
           await detenerCamara();
 
-          mostrar("✓ QR leído correctamente: " + codigo);
-          leyendo = false;
+          elemento("codigo").value = texto;
+
+          procesandoQR = false;
+
+          verificarEntrada();
         },
+
         function() {}
       );
 
-      activa = true;
+      camaraActiva = true;
 
-      document.getElementById("detener").hidden = false;
+      elemento("detener").classList.remove("oculto");
 
-      mostrar("Cámara activa. Apunta al código QR.");
+      mostrarResultado(
+        "Cámara activa",
+        "Apunta al código QR de la entrada.",
+        "neutro"
+      );
 
     } catch (error) {
 
-      mostrar("Error de cámara: " + String(error));
-      escaner = null;
-      document.getElementById("iniciar").disabled = false;
+      await detenerCamara();
+
+      mostrarResultado(
+        "Cámara no disponible",
+        "Revisa los permisos del navegador o ingresa el código manualmente.",
+        "amarillo"
+      );
 
     } finally {
-      leyendo = false;
+
+      cambiarOcupado(false);
     }
   }
 
   async function detenerCamara() {
-    try {
-      if (escaner && activa) {
-        await escaner.stop();
+
+    const estabaActiva = camaraActiva;
+    camaraActiva = false;
+
+    if (escaner) {
+
+      try {
+
+        if (estabaActiva) {
+          await escaner.stop();
+        }
+
         escaner.clear();
+
+      } catch (error) {
+        console.log(error);
       }
-    } catch (error) {
-      console.log(error);
     }
 
-    activa = false;
     escaner = null;
 
-    document.getElementById("detener").hidden = true;
-    document.getElementById("iniciar").disabled = false;
+    elemento("reader").innerHTML = "";
+
+    elemento("detener").classList.add("oculto");
+
+    elemento("iniciar").disabled = ocupado;
   }
+
+  async function verificarEntrada() {
+
+    if (ocupado || !comprobarAcceso()) return;
+
+    ocultarConfirmacion();
+
+    const codigo = elemento("codigo").value.trim();
+    const clave = obtenerClave();
+
+    if (!codigo) {
+
+      mostrarResultado(
+        "Falta el código",
+        "Escanea o ingresa el código de la entrada.",
+        "amarillo"
+      );
+
+      return;
+    }
+
+    cambiarOcupado(true);
+
+    await detenerCamara();
+
+    enviarSolicitud(codigo, false, clave);
+  }
+
+  function enviarSolicitud(codigo, confirmar, clave) {
+
+    if (!conectado || !ventanaPuente) {
+
+      cambiarOcupado(false);
+
+      mostrarResultado(
+        "Sin conexión",
+        "Recarga la página e intenta nuevamente.",
+        "rojo"
+      );
+
+      return;
+    }
+
+    cambiarOcupado(true);
+
+    const id = crypto.randomUUID();
+
+    solicitudPendiente = {
+      id: id,
+      codigo: codigo,
+      clave: clave
+    };
+
+    mostrarResultado(
+      confirmar
+        ? "Registrando ingreso..."
+        : "Verificando entrada...",
+      "Consultando el registro de entradas.",
+      "neutro"
+    );
+
+    temporizador = setTimeout(function() {
+
+      solicitudPendiente = null;
+
+      cambiarOcupado(false);
+      ocultarConfirmacion();
+
+      mostrarResultado(
+        "Tiempo de espera agotado",
+        "Vuelve a verificar la entrada antes de confirmar el ingreso.",
+        "amarillo"
+      );
+
+      elemento("nueva").classList.remove("oculto");
+
+    }, 45000);
+
+    try {
+
+      ventanaPuente.postMessage({
+
+        tipo: "RESONANDO_VALIDAR",
+        solicitud: id,
+        codigo: codigo,
+        confirmar: confirmar,
+        clave: clave
+
+      }, origenPuente);
+
+    } catch (error) {
+
+      clearTimeout(temporizador);
+      solicitudPendiente = null;
+
+      cambiarOcupado(false);
+      ocultarConfirmacion();
+
+      mostrarResultado(
+        "Error de conexión",
+        "Recarga la página e intenta nuevamente.",
+        "rojo"
+      );
+    }
+  }
+
+  function procesarRespuesta(respuesta, codigo, clave) {
+
+    respuesta = respuesta || {};
+
+    ocultarConfirmacion();
+
+    elemento("nueva").classList.remove("oculto");
+
+    const estado = respuesta.estado || "";
+    const nombre = respuesta.nombre || "";
+    const numero = respuesta.numero || "";
+    const mensaje = respuesta.mensaje || "";
+    const fecha = respuesta.fecha || "";
+
+    if (estado === "valida") {
+
+      codigoValidado = codigo;
+      claveValidada = clave;
+
+      mostrarResultado(
+        "✓ ENTRADA VÁLIDA",
+        mensaje,
+        "verde",
+        nombre,
+        numero
+      );
+
+      elemento("confirmar").classList.remove("oculto");
+
+    } else if (estado === "registrada") {
+
+      mostrarResultado(
+        "✓ INGRESO REGISTRADO",
+        mensaje,
+        "verde",
+        nombre,
+        numero,
+        fecha
+      );
+
+    } else if (estado === "utilizada") {
+
+      mostrarResultado(
+        "⚠ ENTRADA YA UTILIZADA",
+        mensaje,
+        "amarillo",
+        nombre,
+        numero,
+        fecha
+      );
+
+    } else if (estado === "invalida") {
+
+      mostrarResultado(
+        "✕ ENTRADA NO VÁLIDA",
+        mensaje,
+        "rojo",
+        nombre,
+        numero
+      );
+
+    } else {
+
+      mostrarResultado(
+        "No se pudo validar",
+        mensaje || "Revisa la clave e intenta nuevamente.",
+        "rojo"
+      );
+    }
+  }
+
+  function confirmarIngreso() {
+
+    if (
+      ocupado ||
+      !codigoValidado ||
+      !claveValidada
+    ) return;
+
+    const codigo = codigoValidado;
+    const clave = claveValidada;
+
+    ocultarConfirmacion();
+
+    enviarSolicitud(codigo, true, clave);
+  }
+
+  async function nuevaEntrada() {
+
+    if (ocupado) return;
+
+    await detenerCamara();
+
+    ocultarConfirmacion();
+
+    elemento("codigo").value = "";
+
+    elemento("resultado").className = "oculto";
+
+    elemento("nueva").classList.add("oculto");
+
+    iniciarCamara();
+  }
+
+  elemento("clave").addEventListener(
+    "input",
+    ocultarConfirmacion
+  );
+
+  elemento("codigo").addEventListener(
+    "input",
+    ocultarConfirmacion
+  );
+
 </script>
 
 </body>
