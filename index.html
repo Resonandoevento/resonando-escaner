@@ -1,0 +1,200 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Resonando - Control de ingreso</title>
+
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: #f5eee5;
+      color: #211d19;
+      font-family: Arial, sans-serif;
+    }
+
+    header {
+      background: #211d19;
+      color: #d9b98c;
+      padding: 30px 15px;
+      text-align: center;
+    }
+
+    h1 {
+      font-family: Georgia, serif;
+      font-style: italic;
+      font-size: 38px;
+      margin: 0 0 10px;
+    }
+
+    header p {
+      letter-spacing: 2px;
+      font-size: 13px;
+    }
+
+    main {
+      max-width: 480px;
+      margin: 20px auto;
+      padding: 22px;
+      background: white;
+      border-radius: 16px;
+    }
+
+    button {
+      width: 100%;
+      padding: 16px;
+      margin: 7px 0;
+      background: #796451;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+    }
+
+    #reader {
+      width: 100%;
+      margin-top: 15px;
+    }
+
+    #resultado {
+      background: #f5eee5;
+      padding: 17px;
+      border-radius: 10px;
+      margin-top: 15px;
+      text-align: center;
+      overflow-wrap: anywhere;
+    }
+
+    footer {
+      padding: 20px;
+      text-align: center;
+      color: #796451;
+      font-size: 13px;
+    }
+
+    @media (max-width: 520px) {
+      main {
+        margin: 15px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+<header>
+  <h1>Resonando</h1>
+  <p>DANI DONOSO</p>
+  <p>CONTROL DE INGRESO</p>
+</header>
+
+<main>
+
+  <button id="iniciar" onclick="iniciarCamara()">
+    📷 Escanear código QR
+  </button>
+
+  <div id="reader"></div>
+
+  <button id="detener" onclick="detenerCamara()" hidden>
+    Cerrar cámara
+  </button>
+
+  <div id="resultado">
+    Prueba de funcionamiento de la cámara.
+  </div>
+
+</main>
+
+<footer>
+  Cada entrada es una ayuda 🤍
+  <br><br>
+  Equipo Resonando – Dani Donoso ✝️
+</footer>
+
+<script>
+  let escaner = null;
+  let activa = false;
+  let leyendo = false;
+
+  function mostrar(mensaje) {
+    document.getElementById("resultado").textContent = mensaje;
+  }
+
+  async function iniciarCamara() {
+    if (activa || leyendo) return;
+
+    leyendo = true;
+    document.getElementById("iniciar").disabled = true;
+
+    try {
+      escaner = new Html5Qrcode("reader");
+
+      await escaner.start(
+        { facingMode: "environment" },
+        {
+          fps: 10,
+          qrbox: { width: 220, height: 220 }
+        },
+        async function(codigo) {
+          if (leyendo || !activa) return;
+
+          leyendo = true;
+          await detenerCamara();
+
+          mostrar("✓ QR leído correctamente: " + codigo);
+          leyendo = false;
+        },
+        function() {}
+      );
+
+      activa = true;
+
+      document.getElementById("detener").hidden = false;
+
+      mostrar("Cámara activa. Apunta al código QR.");
+
+    } catch (error) {
+
+      mostrar("Error de cámara: " + String(error));
+      escaner = null;
+      document.getElementById("iniciar").disabled = false;
+
+    } finally {
+      leyendo = false;
+    }
+  }
+
+  async function detenerCamara() {
+    try {
+      if (escaner && activa) {
+        await escaner.stop();
+        escaner.clear();
+      }
+    } catch (error) {
+      console.log(error);
+    }
+
+    activa = false;
+    escaner = null;
+
+    document.getElementById("detener").hidden = true;
+    document.getElementById("iniciar").disabled = false;
+  }
+</script>
+
+</body>
+</html>
